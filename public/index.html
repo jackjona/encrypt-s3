@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>File Upload and Download</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        margin: 20px;
+        padding: 0;
+        line-height: 1.6;
+      }
+      h1 {
+        color: #333;
+      }
+      form {
+        margin-bottom: 20px;
+      }
+      label {
+        display: block;
+        margin-top: 10px;
+        font-weight: bold;
+      }
+      input {
+        width: 100%;
+        padding: 8px;
+        margin: 5px 0 15px;
+        box-sizing: border-box;
+      }
+      button {
+        background-color: #007bff;
+        color: white;
+        border: none;
+        padding: 10px 15px;
+        cursor: pointer;
+        border-radius: 5px;
+      }
+      button:hover {
+        background-color: #0056b3;
+      }
+      #uploadStatus,
+      #downloadStatus {
+        margin-top: 10px;
+        font-weight: bold;
+        color: #d9534f;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Upload File to S3</h1>
+    <form id="uploadForm">
+      <label for="fileUrl">Origin File URL:</label>
+      <input
+        type="text"
+        id="fileUrl"
+        name="fileUrl"
+        placeholder="Enter the file URL here"
+        required
+      />
+      <label for="uploadPassword">Password:</label>
+      <input
+        type="password"
+        id="uploadPassword"
+        name="uploadPassword"
+        placeholder="Enter a secure password"
+        required
+      />
+      <button type="submit">Upload</button>
+    </form>
+    <div id="uploadStatus"></div>
+    <hr />
+    <h1>Download File from S3</h1>
+    <form id="downloadForm">
+      <label for="fileName">File Name:</label>
+      <input
+        type="text"
+        id="fileName"
+        name="fileName"
+        placeholder="Enter the file name"
+        required
+      />
+      <label for="downloadPassword">Password:</label>
+      <input
+        type="password"
+        id="downloadPassword"
+        name="downloadPassword"
+        placeholder="Enter the decryption password"
+        required
+      />
+      <button type="submit">Download</button>
+    </form>
+    <div id="downloadStatus"></div>
+
+    <script>
+      async function uploadFile(event) {
+        event.preventDefault();
+        const fileUrl = document.getElementById("fileUrl").value.trim();
+        const password = document.getElementById("uploadPassword").value.trim();
+
+        if (!fileUrl || !password) {
+          document.getElementById("uploadStatus").innerText =
+            "Please fill in all fields.";
+          return;
+        }
+
+        try {
+          const response = await fetch("/upload", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ url: fileUrl, password }),
+          });
+
+          const result = await response.json();
+          if (result.fileName) {
+            document.getElementById(
+              "uploadStatus"
+            ).innerText = `Success: File uploaded! File ID: ${result.fileName}`;
+          } else {
+            document.getElementById(
+              "uploadStatus"
+            ).innerText = `Error: ${result.error}`;
+          }
+        } catch (error) {
+          document.getElementById(
+            "uploadStatus"
+          ).innerText = `Error: ${error.message}`;
+        }
+      }
+
+      async function downloadFile(event) {
+        event.preventDefault();
+        const fileName = document.getElementById("fileName").value.trim();
+        const password = document
+          .getElementById("downloadPassword")
+          .value.trim();
+
+        if (!fileName || !password) {
+          document.getElementById("downloadStatus").innerText =
+            "Please fill in all fields.";
+          return;
+        }
+
+        try {
+          const response = await fetch(
+            `/download/${encodeURIComponent(
+              fileName
+            )}?password=${encodeURIComponent(password)}`
+          );
+
+          if (!response.ok) {
+            throw new Error(
+              (await response.json().error) || "Failed to download file."
+            );
+          }
+
+          const blob = await response.blob();
+          const url = window.URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.style.display = "none";
+          a.href = url;
+          a.download = fileName;
+          document.body.appendChild(a);
+          a.click();
+          window.URL.revokeObjectURL(url);
+
+          document.getElementById("downloadStatus").innerText =
+            "File downloaded successfully!";
+          document.getElementById("downloadStatus").style.color = "green";
+        } catch (error) {
+          document.getElementById(
+            "downloadStatus"
+          ).innerText = `Error: ${error.message}`;
+        }
+      }
+
+      document
+        .getElementById("uploadForm")
+        .addEventListener("submit", uploadFile);
+      document
+        .getElementById("downloadForm")
+        .addEventListener("submit", downloadFile);
+    </script>
+  </body>
+</html>
