@@ -20,58 +20,58 @@ const s3Client = new S3Client({
   region: "global",
 });
 
-// Route: Upload
+// Helper Functions
+function toBase64(array) {
+  return btoa(String.fromCharCode(...array));
+}
+
+function fromBase64(base64String) {
+  return Uint8Array.from(atob(base64String), (c) => c.charCodeAt(0));
+}
+
+// Upload Route
 app.post("/upload", async (c) => {
-  try {
-    const formData = await c.req.parseBody();
-    const file = formData.file;
-    const iv = formData.iv;
-    const salt = formData.salt;
+  const { file, iv, salt } = await c.req.json();
 
-    if (!file || !iv || !salt) {
-      throw new Error("Missing required fields");
-    }
+  const fileName = `file-${Date.now()}`;
+  await s3Client.send(
+    new PutObjectCommand({
+      Bucket: bucketName,
+      Key: fileName,
+      Body: Uint8Array.from(file),
+      Metadata: {
+        iv: toBase64(iv),
+        salt: toBase64(salt),
+      },
+    })
+  );
 
-    const uniqueFileName = `file-${Date.now()}`;
-
-    await s3Client.send(
-      new PutObjectCommand({
-        Bucket: bucketName,
-        Key: uniqueFileName,
-        Body: file,
-        Metadata: {
-          iv,
-          salt,
-        },
-      })
-    );
-
-    return c.json({
-      message: "File uploaded successfully!",
-      fileName: uniqueFileName,
-    });
-  } catch (err) {
-    return c.json({ error: err.message }, 500);
-  }
+  return c.json({
+    message: "Upload successful!",
+    fileName,
+  });
 });
 
-// Route: Download
+// Download Route
 app.get("/download/:fileName", async (c) => {
-  try {
-    const { fileName } = c.req.param();
+  const { fileName } = c.req.param();
 
+  try {
     const { Body, Metadata } = await s3Client.send(
       new GetObjectCommand({ Bucket: bucketName, Key: fileName })
     );
 
-    // Return the file and metadata to the client
-    return c.body(Body, {
-      headers: {
-        "x-metadata": JSON.stringify(Metadata),
-      },
+    const encryptedContent = await Body.transformToByteArray();
+    const iv = fromBase64(Metadata.iv); // Convert Base64 back to Uint8Array
+    const salt = fromBase64(Metadata.salt); // Convert Base64 back to Uint8Array
+
+    return c.json({
+      encryptedContent: Array.from(encryptedContent), // Convert Uint8Array to Array for JSON
+      iv: Array.from(iv),
+      salt: Array.from(salt),
     });
-  } catch (err) {
-    return c.json({ error: err.message }, 500);
+  } catch (error) {
+    return c.json({ error: `Failed to download file: ${error.message}` }, 500);
   }
 });
 
