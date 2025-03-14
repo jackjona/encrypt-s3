@@ -1,0 +1,6 @@
+# Rename this file to .dev.vars
+ENDPOINT=
+ACCESS_KEY=
+SECRET_KEY=
+REGION=
+BUCKET_NAME=

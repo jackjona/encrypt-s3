@@ -5,27 +5,23 @@ import {
   GetObjectCommand,
 } from "@aws-sdk/client-s3";
 
-const app = new Hono();
-
-const credentials = {
-  accessKeyId: "8D0GIxjFkuvBNHC5",
-  secretAccessKey: "vqJIP3R4a5Sr5ToKBEOMHUvc2jK8NFWqa0N7xaOG",
+// Type bindings for environment variables
+type Bindings = {
+  ENDPOINT: string;
+  SECRET_KEY: string;
+  ACCESS_KEY: string;
+  REGION: string;
+  BUCKET_NAME: string;
 };
 
-const bucketName = "s3media";
-
-const s3Client = new S3Client({
-  endpoint: "https://s3.tebi.io", // Replace with your S3-compatible endpoint
-  credentials,
-  region: "global", // Replace with your region if needed
-});
+const app = new Hono<{ Bindings: Bindings }>();
 
 // Helper functions for base64 encoding and decoding
-function toBase64(array) {
+function toBase64(array: Uint8Array): string {
   return btoa(String.fromCharCode(...array));
 }
 
-function fromBase64(base64String) {
+function fromBase64(base64String: string): Uint8Array {
   return Uint8Array.from(atob(base64String), (c) => c.charCodeAt(0));
 }
 
@@ -34,10 +30,20 @@ app.post("/upload", async (c) => {
   const { file, iv, salt, contentType } = await c.req.json(); // Extract data from the request body
 
   const fileName = `file-${Date.now()}`; // Generate a unique filename
+
   try {
+    const s3Client = new S3Client({
+      endpoint: c.env.ENDPOINT,
+      credentials: {
+        accessKeyId: c.env.ACCESS_KEY,
+        secretAccessKey: c.env.SECRET_KEY,
+      },
+      region: c.env.REGION,
+    });
+
     await s3Client.send(
       new PutObjectCommand({
-        Bucket: bucketName,
+        Bucket: c.env.BUCKET_NAME,
         Key: fileName,
         Body: Uint8Array.from(file), // Convert file back to Uint8Array
         ContentType: contentType, // Explicitly set the ContentType
@@ -59,9 +65,18 @@ app.get("/download/:fileName", async (c) => {
   const { fileName } = c.req.param(); // Extract filename from the URL
 
   try {
+    const s3Client = new S3Client({
+      endpoint: c.env.ENDPOINT,
+      credentials: {
+        accessKeyId: c.env.ACCESS_KEY,
+        secretAccessKey: c.env.SECRET_KEY,
+      },
+      region: c.env.REGION,
+    });
+
     // Fetch the object, including ContentType
     const { Body, Metadata, ContentType } = await s3Client.send(
-      new GetObjectCommand({ Bucket: bucketName, Key: fileName })
+      new GetObjectCommand({ Bucket: c.env.BUCKET_NAME, Key: fileName })
     );
 
     const encryptedContent = await Body.transformToByteArray(); // Read file content as byte array
