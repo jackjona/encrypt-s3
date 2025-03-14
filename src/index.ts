@@ -15,12 +15,12 @@ const credentials = {
 const bucketName = "s3media";
 
 const s3Client = new S3Client({
-  endpoint: "https://s3.tebi.io",
+  endpoint: "https://s3.tebi.io", // Replace with your S3-compatible endpoint
   credentials,
-  region: "global",
+  region: "global", // Replace with your region if needed
 });
 
-// Helper Functions
+// Helper functions for base64 encoding and decoding
 function toBase64(array) {
   return btoa(String.fromCharCode(...array));
 }
@@ -29,50 +29,56 @@ function fromBase64(base64String) {
   return Uint8Array.from(atob(base64String), (c) => c.charCodeAt(0));
 }
 
-// Upload Route
+// Upload Route: Handles encrypted file uploads
 app.post("/upload", async (c) => {
-  const { file, iv, salt } = await c.req.json();
+  const { file, iv, salt, contentType } = await c.req.json(); // Extract data from the request body
 
-  const fileName = `file-${Date.now()}`;
-  await s3Client.send(
-    new PutObjectCommand({
-      Bucket: bucketName,
-      Key: fileName,
-      Body: Uint8Array.from(file),
-      Metadata: {
-        iv: toBase64(iv),
-        salt: toBase64(salt),
-      },
-    })
-  );
+  const fileName = `file-${Date.now()}`; // Generate a unique filename
+  try {
+    await s3Client.send(
+      new PutObjectCommand({
+        Bucket: bucketName,
+        Key: fileName,
+        Body: Uint8Array.from(file), // Convert file back to Uint8Array
+        ContentType: contentType, // Explicitly set the ContentType
+        Metadata: {
+          iv: toBase64(iv), // Store IV in metadata
+          salt: toBase64(salt), // Store salt in metadata
+        },
+      })
+    );
 
-  return c.json({
-    message: "Upload successful!",
-    fileName,
-  });
+    return c.json({ message: "Upload successful!", fileName });
+  } catch (error) {
+    return c.json({ error: `Failed to upload file: ${error.message}` }, 500);
+  }
 });
 
-// Download Route
+// Download Route: Handles retrieval of encrypted files and metadata
 app.get("/download/:fileName", async (c) => {
-  const { fileName } = c.req.param();
+  const { fileName } = c.req.param(); // Extract filename from the URL
 
   try {
-    const { Body, Metadata } = await s3Client.send(
+    // Fetch the object, including ContentType
+    const { Body, Metadata, ContentType } = await s3Client.send(
       new GetObjectCommand({ Bucket: bucketName, Key: fileName })
     );
 
-    const encryptedContent = await Body.transformToByteArray();
-    const iv = fromBase64(Metadata.iv); // Convert Base64 back to Uint8Array
-    const salt = fromBase64(Metadata.salt); // Convert Base64 back to Uint8Array
+    const encryptedContent = await Body.transformToByteArray(); // Read file content as byte array
+    const iv = fromBase64(Metadata.iv); // Decode IV from metadata
+    const salt = fromBase64(Metadata.salt); // Decode salt from metadata
 
+    // Pass ContentType correctly, fallback to 'application/octet-stream'
     return c.json({
-      encryptedContent: Array.from(encryptedContent), // Convert Uint8Array to Array for JSON
+      encryptedContent: Array.from(encryptedContent), // Convert to Array for JSON
       iv: Array.from(iv),
       salt: Array.from(salt),
+      contentType: ContentType || "application/octet-stream", // Default if not found
     });
   } catch (error) {
     return c.json({ error: `Failed to download file: ${error.message}` }, 500);
   }
 });
 
+// Default export for the app
 export default app;

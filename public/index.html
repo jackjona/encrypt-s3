@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>URL File Encryption and Upload</title>
+    <title>File Upload and Decrypt</title>
     <style>
       body {
         font-family: Arial, sans-serif;
@@ -16,20 +16,21 @@
         display: block;
         margin-top: 10px;
       }
+      select,
       input,
-      button,
-      progress {
+      button {
         margin-top: 5px;
         display: block;
-      }
-      progress {
-        width: 100%;
-        height: 20px;
+        padding: 10px;
       }
       #uploadStatus,
       #downloadStatus {
         margin-top: 15px;
         font-weight: bold;
+      }
+      progress {
+        margin-top: 10px;
+        width: 100%;
       }
     </style>
   </head>
@@ -43,6 +44,20 @@
         placeholder="Enter the file URL"
         required
       />
+      <label for="fileExtension">File Type:</label>
+      <select id="fileExtension" required>
+        <option value=".jpg">.jpg (JPEG Image)</option>
+        <option value=".jpeg">.jpeg (JPEG Image)</option>
+        <option value=".png">.png (PNG Image)</option>
+        <option value=".gif">.gif (GIF Image)</option>
+        <option value=".mp4">.mp4 (MP4 Video)</option>
+        <option value=".mkv">.mkv (Matroska Video)</option>
+        <option value=".mp3">.mp3 (MP3 Audio)</option>
+        <option value=".wav">.wav (WAV Audio)</option>
+        <option value=".pdf">.pdf (PDF Document)</option>
+        <option value=".txt">.txt (Text File)</option>
+        <option value=".json">.json (JSON File)</option>
+      </select>
       <label for="password">Password:</label>
       <input
         type="password"
@@ -57,12 +72,7 @@
     <h1>Download and Decrypt File</h1>
     <form id="downloadForm">
       <label for="fileName">File Name:</label>
-      <input
-        type="text"
-        id="fileName"
-        placeholder="Enter file name"
-        required
-      />
+      <input type="text" id="fileName" placeholder="Enter file name" required />
       <label for="passwordDecrypt">Password:</label>
       <input
         type="password"
@@ -75,21 +85,36 @@
     <div id="downloadStatus"></div>
 
     <script>
-      // Function to fetch and encrypt the file
+      function getMimeTypeFromExtension(extension) {
+        const mimeTypes = {
+          jpg: "image/jpeg",
+          jpeg: "image/jpeg",
+          png: "image/png",
+          gif: "image/gif",
+          mkv: "video/x-matroska",
+          mp4: "video/mp4",
+          mp3: "audio/mpeg",
+          wav: "audio/wav",
+          pdf: "application/pdf",
+          txt: "text/plain",
+          json: "application/json",
+        };
+        const ext = extension.replace(/^\./, "").toLowerCase();
+        return mimeTypes[ext] || "application/octet-stream";
+      }
+
       async function fetchAndEncryptFile(url, password) {
         const response = await fetch(url);
         if (!response.ok) {
-          throw new Error("Failed to fetch the file. Please check the URL.");
+          throw new Error("Failed to fetch the file.");
         }
-
         const fileBuffer = await response.arrayBuffer();
         if (fileBuffer.byteLength === 0) {
           throw new Error("The fetched file is empty.");
         }
 
-        const iv = crypto.getRandomValues(new Uint8Array(12)); // IV length = 12 bytes
-        const salt = crypto.getRandomValues(new Uint8Array(16)); // Salt length = 16 bytes
-
+        const iv = crypto.getRandomValues(new Uint8Array(12));
+        const salt = crypto.getRandomValues(new Uint8Array(16));
         const keyMaterial = await crypto.subtle.importKey(
           "raw",
           new TextEncoder().encode(password),
@@ -97,7 +122,6 @@
           false,
           ["deriveKey"]
         );
-
         const key = await crypto.subtle.deriveKey(
           {
             name: "PBKDF2",
@@ -110,17 +134,14 @@
           true,
           ["encrypt"]
         );
-
         const encryptedContent = await crypto.subtle.encrypt(
           { name: "AES-GCM", iv: iv },
           key,
           fileBuffer
         );
-
         return { encryptedContent, iv, salt };
       }
 
-      // Function to decrypt the file
       async function decryptFile(encryptedBuffer, password, iv, salt) {
         const keyMaterial = await crypto.subtle.importKey(
           "raw",
@@ -129,7 +150,6 @@
           false,
           ["deriveKey"]
         );
-
         const key = await crypto.subtle.deriveKey(
           {
             name: "PBKDF2",
@@ -142,7 +162,6 @@
           true,
           ["decrypt"]
         );
-
         return await crypto.subtle.decrypt(
           { name: "AES-GCM", iv: iv },
           key,
@@ -150,106 +169,96 @@
         );
       }
 
-      // Upload Form Event Listener
-      document.getElementById("uploadForm").addEventListener("submit", async (e) => {
-        e.preventDefault();
-        const fileUrl = document.getElementById("fileUrl").value;
-        const password = document.getElementById("password").value;
-        const uploadStatus = document.getElementById("uploadStatus");
+      document
+        .getElementById("uploadForm")
+        .addEventListener("submit", async (e) => {
+          e.preventDefault();
+          const fileUrl = document.getElementById("fileUrl").value;
+          const fileExtension = document.getElementById("fileExtension").value;
+          const fileType = getMimeTypeFromExtension(fileExtension);
+          const password = document.getElementById("password").value;
+          const uploadStatus = document.getElementById("uploadStatus");
 
-        uploadStatus.innerText = "Fetching and encrypting file...";
+          uploadStatus.innerText = "Fetching and encrypting file...";
+          try {
+            const { encryptedContent, iv, salt } = await fetchAndEncryptFile(
+              fileUrl,
+              password
+            );
+            const encryptedFile = new Uint8Array(encryptedContent);
 
-        try {
-          const { encryptedContent, iv, salt } = await fetchAndEncryptFile(
-            fileUrl,
-            password
-          );
+            const xhr = new XMLHttpRequest();
+            xhr.open("POST", "/upload", true);
+            xhr.setRequestHeader("Content-Type", "application/json");
 
-          const encryptedFile = new Uint8Array(encryptedContent);
+            xhr.onload = function () {
+              if (xhr.status === 200) {
+                const response = JSON.parse(xhr.responseText);
+                uploadStatus.innerText = `File uploaded successfully! Filename: ${response.fileName}`;
+              } else {
+                uploadStatus.innerText = `Error: ${xhr.responseText}`;
+              }
+            };
 
-          // Create a progress bar
-          const progressIndicator = document.createElement("progress");
-          progressIndicator.max = encryptedFile.byteLength;
-          progressIndicator.value = 0;
-          uploadStatus.innerHTML = "Uploading file: ";
-          uploadStatus.appendChild(progressIndicator);
+            xhr.onerror = function () {
+              uploadStatus.innerText = "Error occurred during file upload.";
+            };
 
-          // Upload using XMLHttpRequest to track progress
-          const xhr = new XMLHttpRequest();
-          xhr.open("POST", "/upload", true);
-          xhr.setRequestHeader("Content-Type", "application/json");
-
-          xhr.upload.onprogress = function (event) {
-            if (event.lengthComputable) {
-              progressIndicator.value = event.loaded;
-              progressIndicator.max = event.total;
-            }
-          };
-
-          xhr.onload = function () {
-            if (xhr.status === 200) {
-              const response = JSON.parse(xhr.responseText);
-              uploadStatus.innerHTML = `File uploaded successfully! Filename: ${response.fileName}`;
-            } else {
-              const errorResponse = JSON.parse(xhr.responseText);
-              uploadStatus.innerHTML = `Error: ${errorResponse.error}`;
-            }
-          };
-
-          xhr.onerror = function () {
-            uploadStatus.innerText = "Error occurred during upload.";
-          };
-
-          xhr.send(
-            JSON.stringify({
-              file: Array.from(encryptedFile),
-              iv: Array.from(iv),
-              salt: Array.from(salt),
-            })
-          );
-        } catch (error) {
-          uploadStatus.innerText = `Error: ${error.message}`;
-        }
-      });
-
-      // Download Form Event Listener
-      document.getElementById("downloadForm").addEventListener("submit", async (e) => {
-        e.preventDefault();
-        const fileName = document.getElementById("fileName").value;
-        const password = document.getElementById("passwordDecrypt").value;
-        const downloadStatus = document.getElementById("downloadStatus");
-
-        downloadStatus.innerText = "Downloading encrypted file...";
-        try {
-          const response = await fetch(`/download/${fileName}`);
-          if (!response.ok) {
-            throw new Error("Error downloading the file.");
+            xhr.send(
+              JSON.stringify({
+                file: Array.from(encryptedFile),
+                iv: Array.from(iv),
+                salt: Array.from(salt),
+                contentType: fileType,
+              })
+            );
+          } catch (error) {
+            uploadStatus.innerText = `Error: ${error.message}`;
           }
+        });
 
-          const { encryptedContent, iv, salt } = await response.json();
+      document
+        .getElementById("downloadForm")
+        .addEventListener("submit", async (e) => {
+          e.preventDefault();
+          const fileName = document.getElementById("fileName").value;
+          const password = document.getElementById("passwordDecrypt").value;
+          const downloadStatus = document.getElementById("downloadStatus");
 
-          downloadStatus.innerText = "Decrypting file...";
-          const decryptedBuffer = await decryptFile(
-            new Uint8Array(encryptedContent).buffer,
-            password,
-            new Uint8Array(iv),
-            new Uint8Array(salt)
-          );
+          downloadStatus.innerText = "Downloading encrypted file...";
+          try {
+            const response = await fetch(`/download/${fileName}`);
+            if (!response.ok) {
+              throw new Error("Error downloading the file.");
+            }
+            const { encryptedContent, iv, salt, contentType } =
+              await response.json();
 
-          // Create Blob and trigger file download
-          const blob = new Blob([decryptedBuffer]);
-          const a = document.createElement("a");
-          a.href = URL.createObjectURL(blob);
-          a.download = fileName;
-          a.click();
+            downloadStatus.innerText = "Decrypting...";
+            try {
+              const decryptedBuffer = await decryptFile(
+                new Uint8Array(encryptedContent).buffer,
+                password,
+                new Uint8Array(iv),
+                new Uint8Array(salt)
+              );
 
-          // Success message
-          console.log("The decrypted file has been successfully downloaded!");
-          downloadStatus.innerText = "The decrypted file has been successfully downloaded!";
-        } catch (error) {
-          downloadStatus.innerText = `Error: ${error.message}`;
-        }
-      }); 
+              const blob = new Blob([decryptedBuffer], { type: contentType });
+              const a = document.createElement("a");
+              a.href = URL.createObjectURL(blob);
+              a.download = fileName;
+              a.click();
+
+              downloadStatus.innerText =
+                "The decrypted file has been successfully downloaded!";
+            } catch (error) {
+              downloadStatus.innerText =
+                "Decryption failed. Please check your password and try again.";
+            }
+          } catch (error) {
+            downloadStatus.innerText = `Error: ${error.message}`;
+          }
+        });
     </script>
   </body>
 </html>
