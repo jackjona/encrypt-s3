@@ -3,6 +3,7 @@ import {
   S3Client,
   PutObjectCommand,
   GetObjectCommand,
+  DeleteObjectCommand,
 } from "@aws-sdk/client-s3";
 
 // Type bindings for environment variables
@@ -92,6 +93,34 @@ app.get("/download/:fileName", async (c) => {
     });
   } catch (error) {
     return c.json({ error: `Failed to download file: ${error.message}` }, 500);
+  }
+});
+
+// Delete Route: Handles deletion of an S3 object
+app.delete("/delete/:fileName", async (c) => {
+  const { fileName } = c.req.param(); // Extract filename from the URL
+
+  try {
+    const s3Client = new S3Client({
+      endpoint: c.env.ENDPOINT,
+      credentials: {
+        accessKeyId: c.env.ACCESS_KEY,
+        secretAccessKey: c.env.SECRET_KEY,
+      },
+      region: c.env.REGION,
+    });
+
+    // Send a DeleteObjectCommand to remove the file
+    await s3Client.send(
+      new DeleteObjectCommand({
+        Bucket: c.env.BUCKET_NAME,
+        Key: fileName,
+      })
+    );
+
+    return c.json({ message: "File deleted successfully!", fileName });
+  } catch (error) {
+    return c.json({ error: `Failed to delete file: ${error.message}` }, 500);
   }
 });
 

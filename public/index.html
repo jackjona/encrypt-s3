@@ -84,6 +84,45 @@
     </form>
     <div id="downloadStatus"></div>
 
+    <h1>Delete File</h1>
+    <form id="deleteForm">
+      <label for="deleteFileName">File Name:</label>
+      <input
+        type="text"
+        id="deleteFileName"
+        placeholder="Enter file name"
+        required
+      />
+      <button type="submit">Delete File</button>
+    </form>
+    <div id="deleteStatus"></div>
+
+    <script>
+      document
+        .getElementById("deleteForm")
+        .addEventListener("submit", async (e) => {
+          e.preventDefault();
+          const fileName = document.getElementById("deleteFileName").value;
+          const deleteStatus = document.getElementById("deleteStatus");
+
+          deleteStatus.innerText = "Deleting file...";
+          try {
+            const response = await fetch(`/delete/${fileName}`, {
+              method: "DELETE",
+            });
+            const result = await response.json();
+
+            if (response.ok) {
+              deleteStatus.innerText = `File deleted successfully: ${result.fileName}`;
+            } else {
+              deleteStatus.innerText = `Error: ${result.error}`;
+            }
+          } catch (error) {
+            deleteStatus.innerText = `Error: ${error.message}`;
+          }
+        });
+    </script>
+
     <script>
       function getMimeTypeFromExtension(extension) {
         const mimeTypes = {
